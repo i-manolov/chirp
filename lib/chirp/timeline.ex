@@ -53,6 +53,7 @@ defmodule Chirp.Timeline do
     %Post{}
     |> Post.changeset(attrs)
     |> Repo.insert()
+    |> broadcast(:post_created)
   end
 
   @doc """
@@ -71,6 +72,7 @@ defmodule Chirp.Timeline do
     post
     |> Post.changeset(attrs)
     |> Repo.update()
+    |> broadcast(:post_updated)
   end
 
   @doc """
@@ -101,4 +103,31 @@ defmodule Chirp.Timeline do
   def change_post(%Post{} = post, attrs \\ %{}) do
     Post.changeset(post, attrs)
   end
+
+  def inc_likes(%Post{id: id}) do
+    {1, [post]} =
+      from(p in Post, where: p.id == ^id, select: p)
+      |> Repo.update_all(inc: [likes_count: 1])
+
+      broadcast({:ok, post}, :post_updated)
+  end
+
+  def inc_reposts(%Post{id: id}) do
+    {1, [post]} =
+      from(p in Post, where: p.id == ^id, select: p)
+      |> Repo.update_all(inc: [reposts_count: 1])
+
+      broadcast({:ok, post}, :post_updated)
+  end
+
+  def subscribe do
+    Phoenix.PubSub.subscribe(Chirp.PubSub, "posts")
+  end
+
+  defp broadcast({:error, _reason} = error, _event), do: error
+  defp  broadcast({:ok, post}, event) do
+    Phoenix.PubSub.broadcast(Chirp.PubSub, "posts", {event, post})
+    {:ok, post}
+  end
 end
+
